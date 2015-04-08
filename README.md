@@ -1,27 +1,71 @@
-# cRemoteFile
+Included Resources
+==================
+* cRemoteFile
+* cS3RemoteFile
+
+cRemoteFile
+===========
 By default, the [MSFT_xRemoteFile](https://gallery.technet.microsoft.com/xPSDesiredStateConfiguratio-417dc71d) will not check
 that a file has already been download during the Test-TargetResource pass. The cRemoteFile resource will __only__ download a
 file if it's not present or the MD5 checksum is different/incorrect.
+###Syntax
+```
+cRemoteFile [string]
+{
+    DestinationPath = [string]
+    Uri = [string]
+    Checksum = [string]
+    [Credential = [PSCredential]]
+```
+The DestinationPath property must be fully-qualified and include the target file name.
 
-cRemoteFile resource has following properties:
+The Checksum property can be calculated using the Get-FileHash Powershell cmdlet against a local copy of the file.
 
-* DestinationPath: Path under which downloaded file should be accessible after operation.
-* Uri: Uri of a file which should be downloaded.
-* Credential: Specifies credential of a user which has permissions to send the request.
-* Checksum: MD5 checksum of the file contained at the Uri location.
+###Configuration
+```
+Configuration cRemoteFileExample {
+    Import-DscResource -ModuleName cRemoteFile
+    cRemoteFile MyExampleFile {
+        DestinationPath = 'C:\Resources\output.txt'
+        Uri = 'http://uri_to_download_from.com/example.txt'
+        Checksum = '4767B1052744A0469348BAF3406DA944'
+    }
+}
+```
 
-#cS3RemoteFile
-The cS3RemoteFile resource can download private Amazon Web Services files from S3 with a MD5 checksum.
+cS3RemoteFile
+=============
+The cS3RemoteFile resource can download a private Amazon Web Services file from S3 - complete with a MD5 checksum.
 This resource is handy for files/resources that cannot be made publically available due to electronic distribution rights restrictions.
-__This DSC resource requires the [AWS Powershell Tools](http://aws.amazon.com/powershell/) to already be installed on the system executing this resource (obviously the cRemoteFile resource can be used to download the file for installation).__
+__This DSC resource requires the [AWS Powershell Tools](http://aws.amazon.com/powershell/) to already be installed on the system executing this resource (obviously the cRemoteFile resource could be used to download the file for installation).__
+###Syntax
+```
+cS3RemoteFile [string]
+{
+    DestinationPath = [string]
+    Region = [string]
+    BucketName = [string]
+    Key = [string]
+    Credential = [PSCredential]
+    Checksum = [string]
+```
+The DestinationPath property must be fully-qualified and include the target file name.
 
-cS3RemoteFile resource has the following properties:
+The Credential object property username must be the AWS Access Key and the password the AWS Key Secret.
 
-* DestinationPath: Path under which downloaded file should be accessible after operation.
-* Region: AWS region end-point to download the resource.
-* BucketName: AWS S3 bucket name containing the S3 resource to download.
-* Key: AWS S3 key of the S3 resource to download.
-* Credential: Specifies AWS Access Key/Secret of a user which has permissions to download the S3 file.
-* Checksum: MD5 checksum of the file contained in S3.
-
+The Checksum property can be calculated using the Get-FileHash Powershell cmdlet against a local copy of the file.
+###Configuration
+```
+Configuration cS3RemoteFileExample {
+    Import-DscResource -ModuleName cRemoteFile
+    cS3RemoteFile MyExampleS3File {
+        DestinationPath = 'C:\Resources\output.txt'
+        Region = 'eu-central-1'
+        BucketName = 'MyAwsS3Bucket'
+        Key = 'example.txt'
+        Credential = (Get-Credential -Credential 'MyAwsAccessKey')
+        Checksum = '4767B1052744A0469348BAF3406DA944'
+    }
+}
+```
 __Note: to download publically accessible AWS S3 files use the cRemoteFile resource instead.__
