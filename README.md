@@ -1,7 +1,9 @@
-Included Resources
-==================
+Included DSC Resources
+======================
 * cRemoteFile
 * cS3RemoteFile
+
+These custom Desired State Configuration (DSC) resources utilise .NET stream objects and overcome the OutOfMemoryException errors incurred by the in-built Invoke-WebRequest or Read-S3Object Powershell cmdlets.
 
 cRemoteFile
 ===========
@@ -14,12 +16,14 @@ cRemoteFile [string]
 {
     DestinationPath = [string]
     Uri = [string]
-    Checksum = [string]
+    [Checksum = [string]]
     [Credential = [PSCredential]]
 ```
-The DestinationPath property must be fully-qualified and include the target file name.
-
-The Checksum property can be calculated using the Get-FileHash Powershell cmdlet against a local copy of the file.
+###Properties
+* DestinationPath: Fully-qualified path under which downloaded file should be accessible after operation.
+* Uri: HTTP/HTTPS location fo the file which should be downloaded.
+* Checksum: The optional MD5 checksum used to verify the local file.
+* Credential: Specifies optional credential of a user which has permissions to send the request.
 
 ###Configuration
 ```
@@ -47,13 +51,16 @@ cS3RemoteFile [string]
     BucketName = [string]
     Key = [string]
     Credential = [PSCredential]
-    Checksum = [string]
+    [Checksum = [string]]
 ```
-The DestinationPath property must be fully-qualified and include the target file name.
+###Properties
+* DestinationPath: Fully-qualified path under which downloaded file should be accessible after operation.
+* Region: AWS S3 region end-point containing the resource to download.
+* BucketName: AWS S3 bucket name containing the resource to download.
+* Key: AWS S3 resource key/name to download.
+* Credential: Specifies AWS credential of a user which has permissions to send the request. The Credential object property username must be the AWS Access Key and the password the AWS Key Secret.
+* Checksum: The optional MD5 checksum used to verify the local file.
 
-The Credential object property username must be the AWS Access Key and the password the AWS Key Secret.
-
-The Checksum property can be calculated using the Get-FileHash Powershell cmdlet against a local copy of the file.
 ###Configuration
 ```
 Configuration cS3RemoteFileExample {

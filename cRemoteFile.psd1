@@ -1,5 +1,5 @@
 @{
-    ModuleVersion = '1.0.0';
+    ModuleVersion = '1.1.0';
     GUID = '0790f02d-2eb4-4bbd-a07e-6385a41c3397';
     Author = 'Iain Brighton';
     CompanyName = 'Iain Brighton';
