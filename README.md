@@ -18,6 +18,7 @@ cRemoteFile [string]
     Uri = [string]
     [Checksum = [string]]
     [Credential = [PSCredential]]
+}
 ```
 ###Properties
 * DestinationPath: Fully-qualified path under which downloaded file should be accessible after operation.
@@ -52,6 +53,7 @@ cS3RemoteFile [string]
     Key = [string]
     Credential = [PSCredential]
     [Checksum = [string]]
+}
 ```
 ###Properties
 * DestinationPath: Fully-qualified path under which downloaded file should be accessible after operation.

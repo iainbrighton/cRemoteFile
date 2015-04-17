@@ -1,26 +1,26 @@
 data localizedData {
 # culture="en-US"
 ConvertFrom-StringData @'
-AWSSDKNotFoundError=The AWS .Net SDK cannot be found. Ensure the AWS .Net SDK is installed on the target system.
-InvalidDestinationPathSchemeError=Specified DestinationPath is not valid: "{0}". DestinationPath should be absolute path.
-DestinationPathParentNotExistsError=Specified DestinationPath is not valid: "{0}". DestinationPath's parent should exist.
-DestinationPathIsExistingDirectoryError=Specified DestinationPath is not valid: "{0}". DestinationPath should not point to the existing directory.
-DestinationPathIsUncError=Specified DestinationPath is not valid: "{0}". DestinationPath should be local path instead of UNC path.
+InvalidWebUriError=Specified URI is not valid: '{0}'. Only http and https paths are accepted.
+InvalidDestinationPathSchemeError=Specified DestinationPath is not valid: '{0}'. DestinationPath should be an absolute path.
+DestinationPathParentNotExistsError=Specified DestinationPath is not valid: '{0}'. DestinationPath's parent should exist.
+DestinationPathIsExistingDirectoryError=Specified DestinationPath is not valid: '{0}'. DestinationPath should not point to a file - not an existing directory.
+DestinationPathIsUncError=Specified DestinationPath is not valid: '{0}'. DestinationPath should be local path instead of UNC path.
+Downloading = Downloading: {0}
+DownloadStatus = {0:N0} of {1:N0} bytes ({2} %).
 '@
 }
 
 # The Get-TargetResource function is used to fetch the status of file specified in DestinationPath on the target machine.
 function Get-TargetResource {
-    [CmdletBinding()]
+	[CmdletBinding()]
 	[OutputType([System.Collections.Hashtable])]
 	param (
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $DestinationPath,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Region,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $BucketName,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Key,
-        [Parameter()] [AllowNull()] [System.String] $Checksum,
-        [Parameter(Mandatory)] [System.Management.Automation.PSCredential] $Credential
-    )
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $DestinationPath,
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Uri,
+        [Parameter()] [AllowNull()] [System.String] $Checksum
+        ##TODO: Support Headers and UserAgent
+	)   
 
     # Check whether DestinationPath is existing file
     $isFileExists = $false;
@@ -29,6 +29,7 @@ function Get-TargetResource {
         'File' {
             Write-Debug "DestinationPath: '$DestinationPath' already exists";
             $checksumPath = '{0}.md5' -f $DestinationPath;
+
             if (-not (Test-Path -Path $checksumPath)) {
                 ## As it can take a long time to calculate the checksum, write it out to disk for future reference
                 Write-Debug "Destination file exists without checksum?! Creating checksum '$checksumPath' file";
@@ -67,89 +68,29 @@ function Get-TargetResource {
     
     $returnValue = @{
         DestinationPath = $DestinationPath;
-        Region = $Region;
-        BucketName = $BucketName;
-        Key = $Key;
+        Uri = $Uri;
         Checksum = $md5Checksum;
-        Credential = $Credential.UserName;
+        Ensure = $ensure; 
     }
     return $returnValue;
 
 } #end function Get-TargetResource
 
-# The Set-TargetResource function is used to download file found under Uri location to DestinationPath
-# Additional parameters can be specified to configure web request
-function Set-TargetResource {
-	[CmdletBinding()]
-	param (
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $DestinationPath,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Region,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $BucketName,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Key,
-        [Parameter()] [AllowNull()] [System.String] $Checksum,
-        [Parameter(Mandatory)] [System.Management.Automation.PSCredential] $Credential
-	)
-
-    # Validate DestinationPath scheme
-    if (-not (CheckUriScheme -Uri $DestinationPath -Scheme 'file')) {
-        $errorMessage = $($LocalizedData.InvalidDestinationPathSchemeError) -f $DestinationPath;
-        ThrowInvalidDataException -ErrorId "DestinationPathSchemeValidationFailure" -ErrorMessage $errorMessage;
-    }
-
-    # Validate DestinationPath is not UNC path
-    if ($DestinationPath.StartsWith("\\")) { 
-        $errorMessage = $($LocalizedData.DestinationPathIsUncError) -f $DestinationPath;
-        ThrowInvalidDataException -ErrorId "DestinationPathIsUncFailure" -ErrorMessage $errorMessage;
-    }
-
-    # Validate DestinationPath's parent directory exists
-    $destinationPathParent = Split-Path $DestinationPath -Parent;
-    if (-not (Test-Path $destinationPathParent)) {
-        $errorMessage = $($LocalizedData.DestinationPathParentNotExistsError) -f $DestinationPath;
-        ThrowInvalidDataException -ErrorId "DestinationPathParentNotExistsFailure" -ErrorMessage $errorMessage;
-    }
-
-    # Validate DestinationPath's leaf is not an existing folder
-    if (Test-Path $DestinationPath -PathType Container) {
-        $errorMessage = $($LocalizedData.DestinationPathIsExistingDirectoryError) -f ${DestinationPath} 
-        ThrowInvalidDataException -ErrorId "DestinationPathIsExistingDirectoryFailure" -ErrorMessage $errorMessage;
-    }
-
-    # Validate that the AWS Powershell module is installed/discoverable.
-    $awsToolsBinPath = "$env:ProgramFiles\AWS SDK for .NET\bin\Net45";
-    if ([System.Environment]::Is64BitOperatingSystem) {
-        $awsToolsBinPath = "${env:ProgramFiles(x86)}\AWS SDK for .NET\bin\Net45";
-    }
-    $awsToolsSDKPath = Join-Path -Path $awsToolsBinPath -ChildPath 'AWSSDK.dll';
-    if (-not (TestAwsTools)) {
-        $errorId = "AwsSdkNotFound"; 
-        $errorMessage = $LocalizedData.AWSSDKNotFoundError;
-        ThrowInvalidOperationException -ErrorId $errorId -ErrorMessage $errorMessage;
-    }
-
-    Write-Verbose "Downloading AWS S3 file '$BucketName\$Key'";
-    InvokeS3ClientDownload -DestinationPath $DestinationPath -Credential $Credential;
-
-    $checksumPath = '{0}.md5' -f $DestinationPath;
-    $fileHash = Get-FileHash -Path $DestinationPath -Algorithm MD5 -ErrorAction Stop | Select-Object -ExpandProperty Hash;
-    Write-Verbose "Writing checksum '$fileHash' to file '$checksumPath'";
-    $fileHash | Set-Content -Path $checksumPath -Force;
-
-} #end function Set-TargetResource
-
 # The Test-TargetResource function is used to validate if the DestinationPath exists on the machine.
 function Test-TargetResource {
-    [CmdletBinding()]
+	[CmdletBinding()]
 	[OutputType([System.Boolean])]
 	param (
         [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $DestinationPath,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Region,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $BucketName,
-        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Key,
-        [Parameter()] [AllowNull()] [System.String] $Checksum,
-        [Parameter(Mandatory)] [System.Management.Automation.PSCredential] $Credential
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Uri,		
+		[Parameter()] [System.Management.Automation.PSCredential] $Credential,
+        [Parameter()] [AllowNull()] [System.String] $Checksum
 	)
+
+    # Remove Credentials from parameters as it is not parameter of Get-TargetResource function
+    [ref] $null = $PSBoundParameters.Remove("Credential");
     $resource = Get-TargetResource @PSBoundParameters;
+
     if ([System.String]::IsNullOrEmpty($Checksum) -and (Test-Path -Path $DestinationPath -PathType Leaf)) {
         return $true;
     }
@@ -159,44 +100,109 @@ function Test-TargetResource {
     return $false;
 } #end function Test-TargetResource
 
+function Set-TargetResource {
+    [CmdletBinding()]
+	param (
+        [Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $DestinationPath,
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [System.String] $Uri,		
+		[Parameter()] [System.Management.Automation.PSCredential] $Credential,
+        [Parameter()] [AllowNull()] [System.String] $Checksum
+	)
+    
+    # Validate Uri
+    if (-not (CheckUriScheme -Uri $Uri -scheme 'http') -and -not (CheckUriScheme -Uri $Uri -Scheme 'https')) {
+        $errorMessage = $LocalizedData.InvalidWebUriError -f $Uri; 
+        ThrowInvalidDataException -ErrorId 'UriValidationFailure' -ErrorMessage $errorMessage;
+    }
+
+    # Validate DestinationPath scheme
+    if (-not (CheckUriScheme -Uri $DestinationPath -Scheme 'file')) {
+        $errorMessage = $($LocalizedData.InvalidDestinationPathSchemeError) -f $DestinationPath;
+        ThrowInvalidDataException -ErrorId 'DestinationPathSchemeValidationFailure' -ErrorMessage $errorMessage;
+    }
+
+    # Validate DestinationPath is not UNC path
+    if ($DestinationPath.StartsWith('\\')) { 
+        $errorMessage = $($LocalizedData.DestinationPathIsUncError) -f $DestinationPath;
+        ThrowInvalidDataException -ErrorId 'DestinationPathIsUncFailure' -ErrorMessage $errorMessage;
+    }
+
+    # Validate DestinationPath's parent directory exists
+    $destinationPathParent = Split-Path -Path $DestinationPath -Parent;
+    if (-not (Test-Path $destinationPathParent)) {
+        $errorMessage = $($LocalizedData.DestinationPathParentNotExistsError) -f $DestinationPath;
+        ThrowInvalidDataException -ErrorId 'DestinationPathParentNotExistsFailure' -ErrorMessage $errorMessage;
+    }
+
+    # Validate DestinationPath's leaf is not an existing folder
+    if (Test-Path -Path $DestinationPath -PathType Container) {
+        $errorMessage = $($LocalizedData.DestinationPathIsExistingDirectoryError) -f ${DestinationPath} 
+        ThrowInvalidDataException -ErrorId 'DestinationPathIsExistingDirectoryFailure' -ErrorMessage $errorMessage;
+    }
+
+    Write-Verbose "Downloading '$Uri' to '$DestinationPath'";
+    $PSBoundParameters.Remove('Checksum')
+    InvokeWebClientDownload @PSBoundParameters;
+    ## Create the checksum file for future reference
+    $checksumPath = '{0}.md5' -f $DestinationPath;
+    $fileHash = Get-FileHash -Path $DestinationPath -Algorithm MD5 -ErrorAction Stop | Select-Object -ExpandProperty Hash;
+    Write-Verbose "Writing checksum '$fileHash' to file '$checksumPath'";
+    $fileHash | Set-Content -Path $checksumPath -Force;
+    
+} #end function Set-TargetResource
+
 #region Private Functions
 
-function TestAwsTools {
-    param ( )
-    return Test-Path -Path $awsToolsSDKPath;
-}
-
-function InvokeS3ClientDownload {
+function InvokeWebClientDownload {
     param (
         [Parameter(Mandatory)] [System.String] $DestinationPath,
+        [Parameter(Mandatory)] [System.String] $Uri,
         [Parameter()] [AllowNull()] [System.Management.Automation.PSCredential] $Credential
     )
     try {
-        Add-Type -Path $awsToolsSDKPath;
-        [Amazon.RegionEndpoint] $awsRegion = [Amazon.RegionEndpoint]::GetBySystemName($Region);
-        [Amazon.S3.AmazonS3Client] $s3Client = [Amazon.AWSClientFactory]::CreateAmazonS3Client($Credential.UserName, $Credential.GetNetworkCredential().Password, $awsRegion);
-        $path = Resolve-Path -Path $DestinationPath;
+        [System.Net.WebClient] $webClient = New-Object -TypeName 'System.Net.WebClient';
+        $webClient.Proxy = [System.Net.WebRequest]::GetSystemWebProxy();
+        if ($Credential) {
+            $webClient.Credentials = $Credential;
+            $webClient.Proxy.Credentials = $Credential;
+        }
+        else {
+            $webClient.UseDefaultCredentials = $true;
+            $webClient.Proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials;
+        }
+        [System.IO.Stream] $inputStream = $webClient.OpenRead($Uri);
+        [System.UInt32] $contentLength = $webClient.ResponseHeaders['Content-Length'];
+        $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DestinationPath);
         [System.IO.Stream] $outputStream = [System.IO.File]::Create($path);
-        [Amazon.S3.Model.GetObjectRequest] $awsObjectRequest = New-Object -TypeName Amazon.S3.Model.GetObjectRequest;
-        $awsObjectRequest.BucketName = $BucketName;
-        $awsObjectRequest.Key = $Key;
-        [Amazon.S3.Model.GetObjectResponse] $awsRequestResponse = $s3Client.GetObject($awsObjectRequest);
-        $awsRequestResponse.ResponseStream.CopyTo($outputStream);
+        [System.Byte[]] $buffer = New-Object System.Byte[] 4096;
+        [System.UInt32] $bytesRead = 0;
+        [System.UInt32] $totalBytes = 0;
+        do {
+            $bytesRead = $inputStream.Read($buffer, 0, $buffer.Length);
+            $totalBytes += $bytesRead;
+            $outputStream.Write($buffer, 0, $bytesRead);
+            ## Avoid divide by zero
+            if ($contentLength -gt 0) {
+                [System.Byte] $percentComplete = ($totalBytes/$contentLength)*100;
+                Write-Progress -Activity ($localizedData.Downloading -f $uri) -PercentComplete $percentComplete -Status ($localizedData.DownloadStatus -f $totalBytes, $contentLength, $percentComplete);
+            }
+        }
+        while ($bytesRead -ne 0)
         $outputStream.Close();
     }
     catch {
-        throw "Set-TargetResouce failed. $_";
+        throw "InvokeWebClientDownload failed. $_";
     }
     finally {
         if ($null -ne $outputStream) { $outputStream.Close(); }
-        if ($null -ne $awsRequestResponse) { [ref] $null = $awsRequestResponse; }
-        if ($null -ne $awsObjectRequest) { [ref] $null = $awsObjectRequest; }
-        if ($null -ne $s3Client) { [ref] $null = $s3Client; }
+        if ($null -ne $inputStream) { $inputStream.Close(); }
+        if ($null -ne $webClient) { $webClient.Dispose(); }
     }
-} #end function InvokeS3ClientDownload
+} #end function InvokeWebClientDownload
 
 # Gets type of the item which path points to. 
 # Returns: File, Directory, Other or NotExists
+# Credit - adapted from the MSFT_xRemoteFile resource
 function GetPathItemType {
     param (
         [Parameter(Mandatory)] [System.String] $Path
@@ -224,6 +230,7 @@ function GetPathItemType {
 # Checks whether given URI represents specific scheme
 # Most common schemes: file, http, https, ftp
 # We can also specify logical expressions like: [http|https]
+# Credit - adapted from the MSFT_xRemoteFile resource
 function CheckUriScheme {
     param (
         [Parameter(Mandatory)] [System.String] $Uri,
@@ -240,18 +247,6 @@ function ThrowInvalidDataException {
         [Parameter(Mandatory)] [System.String] $ErrorMessage
     )
     $errorCategory = [System.Management.Automation.ErrorCategory]::InvalidData;
-    $exception = New-Object -TypeName 'System.InvalidOperationException' -ArgumentList $ErrorMessage;
-    $errorRecord = New-Object -TypeName 'System.Management.Automation.ErrorRecord' -ArgumentList $exception, $ErrorId, $errorCategory, $null;
-    throw $errorRecord;
-}
-
-# Throws terminating error of category InvalidOperation with specified errorId and errorMessage
-function ThrowInvalidOperationException {
-    param(
-        [Parameter(Mandatory)] [System.String] $ErrorId,
-        [Parameter(Mandatory)] [System.String] $ErrorMessage
-    )
-    $errorCategory = [System.Management.Automation.ErrorCategory]::InvalidOperation;
     $exception = New-Object -TypeName 'System.InvalidOperationException' -ArgumentList $ErrorMessage;
     $errorRecord = New-Object -TypeName 'System.Management.Automation.ErrorRecord' -ArgumentList $exception, $ErrorId, $errorCategory, $null;
     throw $errorRecord;
